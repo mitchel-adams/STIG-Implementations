@@ -1,0 +1,55 @@
+<#
+.SYNOPSIS
+    Configures BitLocker on a specified volume by removing any existing TPM protector and adding a TPM + PIN protector.
+
+.DESCRIPTION
+    This script removes existing TPM protectors on the specified drive and configures a new TPM+PIN protector.
+    A PIN is required at boot to unlock the protected OS volume.
+
+.NOTES
+    Author          : Mitch Adams
+    LinkedIn        : https://www.linkedin.com/in/mitchelcadams
+    GitHub          : https://github.com/mitchel-adams/stig-WN10-00-000031
+    Date Created    : 2025-11-09
+    Last Modified   : 2025-11-09
+    Version         : 1.0
+    CVEs            : N/A
+    Plugin IDs      : N/A
+    STIG-ID         : WN10-00-000031
+
+.TESTED ON
+    Date(s) Tested  :
+    Tested By       :
+    Systems Tested  :
+    PowerShell Ver. :
+
+.USAGE
+    Example syntax:
+        PS C:\> .\Configure-BitLocker.ps1 -MountPoint "C:" -SecurePIN (Read-Host "Enter PIN" -AsSecureString)
+#>
+
+param(
+    [string]$MountPoint = "C:",
+    [SecureString]$SecurePIN
+)
+
+# Convert secure PIN to plaintext for manage-bde
+$pinPlain = (New-Object PSCredential "user", $SecurePIN).GetNetworkCredential().Password
+
+Write-Host "Checking TPM status..."
+$tpm = Get-Tpm
+if (-not $tpm.TpmPresent) {
+    Write-Error "TPM not detected. BitLocker TPM+PIN setup cannot continue."
+    exit 1
+}
+
+Write-Host "Removing existing TPM protectors (if any)..."
+manage-bde -protectors -delete $MountPoint -Type TPM
+
+Write-Host "Adding TPM + PIN protector..."
+manage-bde -protectors -add $MountPoint -TPMAndPIN $pinPlain
+
+Write-Host "Verifying current protectors..."
+manage-bde -protectors -get $MountPoint
+
+Write-Host "BitLocker configuration complete. Reboot required to apply boot PIN."
