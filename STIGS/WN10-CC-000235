@@ -1,6 +1,15 @@
- <#
+<#
 .SYNOPSIS
-    This PowerShell script ensures that the maximum size of the Windows Application event log is at least 32768 KB (32 MB).
+    Enforces Windows 10 STIG WN10-CC-000235:
+    Users must NOT be allowed to ignore Microsoft Defender SmartScreen warnings
+    for unverified files in Microsoft Edge.
+
+.DESCRIPTION
+    Configures the Edge policy:
+      HKLM\SOFTWARE\Policies\Microsoft\Edge\PreventSmartScreenPromptOverrideForFiles = 1
+    and ensures SmartScreen is enabled:
+      HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenEnabled = 1
+    Requires Administrator. A gpupdate/logoff may be needed for full effect.
 
 .NOTES
     Author          : Mitch Adams
@@ -9,46 +18,51 @@
     Date Created    : 2025-11-09
     Last Modified   : 2025-11-09
     Version         : 1.0
-    CVEs            : N/A
-    Plugin IDs      : N/A
-    STIG-ID         : WN10-cc-000235
+    STIG-ID         : WN10-CC-000235  (Block override for *unverified file* warnings in Edge)
 
-.TESTED ON
-    Date(s) Tested  : 
-    Tested By       : 
-    Systems Tested  : 
-    PowerShell Ver. : 
-
-.USAGE
-    Put any usage instructions here.
-    Example syntax:
-    PS C:\> .\__remediation_template(STIG-ID-WN10-AU-000500).ps1 
+.REFERENCES
+    - Windows 10 STIG mapping: WN10-CC-000235 (Block SmartScreen overrides for unverified files in Edge). 
+    - Microsoft Edge policy 'PreventSmartScreenPromptOverrideForFiles'.
 #>
 
-# Define registry paths for both policy locations
-$RegPath1 = "HKLM:\Software\Policies\Microsoft\Edge"
-$RegPath2 = "HKLM:\Software\Policies\Microsoft\Windows\System"
-
-# Define the registry value name and value
-$RegName = "PreventSmartScreenPromptOverrideForFiles"
-$RegValue = 1  # 1 means Enabled
-
-# Check and create the first registry path if it doesn't exist
-if (-not (Test-Path -Path $RegPath1)) {
-    New-Item -Path $RegPath1 -Force
+# ----- safety: require admin -----
+$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Error "Run this script in an elevated PowerShell session (Administrator)."
+    exit 1
 }
 
-# Set the registry value for the first policy location
-Set-ItemProperty -Path $RegPath1 -Name $RegName -Value $RegValue
+$ErrorActionPreference = 'Stop'
 
-# Check and create the second registry path if it doesn't exist
-if (-not (Test-Path -Path $RegPath2)) {
-    New-Item -Path $RegPath2 -Force
+# ----- policy path & values -----
+$EdgePolicyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'
+
+# Value: enable SmartScreen in Edge (recommended so the override setting applies)
+$SmartScreenEnabledName = 'SmartScreenEnabled'
+$SmartScreenEnabledVal  = 1  # 1 = enabled
+
+# Value: block override for unverified file warnings (this is WN10-CC-000235)
+$PreventOverrideFilesName = 'PreventSmartScreenPromptOverrideForFiles'
+$PreventOverrideFilesVal  = 1  # 1 = block bypass
+
+# ----- ensure policy key exists -----
+if (-not (Test-Path $EdgePolicyPath)) {
+    New-Item -Path $EdgePolicyPath -Force | Out-Null
 }
 
-# Set the registry value for the second policy location
-Set-ItemProperty -Path $RegPath2 -Name $RegName -Value $RegValue
+# ----- set policies -----
+New-ItemProperty -Path $EdgePolicyPath -Name $SmartScreenEnabledName     -PropertyType DWord -Value $SmartScreenEnabledVal     -Force | Out-Null
+New-ItemProperty -Path $EdgePolicyPath -Name $PreventOverrideFilesName   -PropertyType DWord -Value $PreventOverrideFilesVal   -Force | Out-Null
 
-# Output a success message
-Write-Host "Policy 'Prevent bypassing Windows Defender SmartScreen prompts for files' has been set to 'Enabled' in both locations."
-gpupdate /force 
+# ----- verification output -----
+$smart = Get-ItemProperty -Path $EdgePolicyPath -Name $SmartScreenEnabledName -ErrorAction SilentlyContinue
+$preventFiles = Get-ItemProperty -Path $EdgePolicyPath -Name $PreventOverrideFilesName -ErrorAction SilentlyContinue
+
+Write-Host "==== Microsoft Edge SmartScreen Policy Status ===="
+Write-Host ("SmartScreenEnabled:                        {0}" -f ($smart.$SmartScreenEnabledName))
+Write-Host ("PreventSmartScreenPromptOverrideForFiles:  {0}" -f ($preventFiles.$PreventOverrideFilesName))
+Write-Host "Compliance target (WN10-CC-000235): PreventSmartScreenPromptOverrideForFiles = 1 (block bypass)."
+Write-Host "Note: WN10-CC-000230 (websites) is a separate STIG—do not conflate with this control."
+
+# Optional: apply group policy immediately (uncomment if desired in managed environments)
+# gpupdate /target:computer /force
