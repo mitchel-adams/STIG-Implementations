@@ -1,0 +1,146 @@
+<#
+.SYNOPSIS
+    Configures the Windows event log retention settings associated with
+    STIG ID WN10-AU-000100 for Windows 10.
+
+.DESCRIPTION
+    This script uses the Limit-EventLog cmdlet to configure a Windows event log
+    (commonly the Security log) to meet the STIG requirement. You must set the
+    values in the CONFIG section to match the official WN10-AU-000100 guidance
+    (log name, maximum size, overflow behavior, and optional retention days).
+
+.NOTES
+    Author          : Mitch Adams
+    LinkedIn        : https://www.linkedin.com/in/mitchelcadams
+    GitHub          : https://github.com/mitchel-adams
+    Date Created    : 2025-11-19
+    Last Modified   : 2025-11-19
+    Version         : 1.0
+    CVEs            : N/A
+    Plugin IDs      : N/A
+    STIG-ID         : WN10-AU-000100
+
+.TESTED ON
+    Date(s) Tested  :
+    Tested By       :
+    Systems Tested  :
+    PowerShell Ver. :
+
+.USAGE
+    1. Update the CONFIG block with the required values from the STIG:
+       - $LogName         (e.g., 'Security')
+       - $MaxSizeKB       (e.g., 196608 for 192 MB, or whatever the STIG requires)
+       - $OverflowAction  ('OverwriteAsNeeded', 'OverwriteOlder', or 'DoNotOverwrite')
+       - $RetentionDays   (only used when OverflowAction = 'OverwriteOlder')
+
+    2. Run from an elevated PowerShell session:
+       PS C:\> .\WN10-AU-000100_ConfigEventLogRetention.ps1
+
+#>
+
+# ================================
+# CONFIG – SET THESE TO MATCH STIG
+# ================================
+
+# Commonly "Security", but verify WN10-AU-000100 text
+$LogName        = 'Security'
+
+# Maximum size in KB (example: 196608 = 192 MB)
+# Replace this with the exact minimum required by the STIG
+$MaxSizeKB      = 196608   # TODO: adjust per STIG requirement
+
+# Overflow behavior:
+#   'OverwriteAsNeeded' – overwrite oldest events as log fills
+#   'OverwriteOlder'    – overwrite events older than RetentionDays
+#   'DoNotOverwrite'    – log must be cleared manually
+$OverflowAction = 'OverwriteOlder'  # TODO: set per STIG text
+
+# Only applies if OverflowAction = 'OverwriteOlder'
+# Example: minimum 7 days
+$RetentionDays  = 7  # TODO: adjust per STIG requirement
+
+# ================================
+# VALIDATION
+# ================================
+
+# Ensure script is run elevated
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
+    Write-Error "This script must be run in an elevated PowerShell session (Run as Administrator)."
+    exit 1
+}
+
+if ([string]::IsNullOrWhiteSpace($LogName)) {
+    Write-Error "LogName is not set. Please configure the CONFIG block."
+    exit 1
+}
+
+if ($MaxSizeKB -le 0) {
+    Write-Error "MaxSizeKB must be a positive integer. Please configure the CONFIG block."
+    exit 1
+}
+
+$validOverflow = @('OverwriteAsNeeded','OverwriteOlder','DoNotOverwrite')
+if ($OverflowAction -notin $validOverflow) {
+    Write-Error "OverflowAction must be one of: $($validOverflow -join ', ')."
+    exit 1
+}
+
+if ($OverflowAction -eq 'OverwriteOlder' -and $RetentionDays -le 0) {
+    Write-Error "RetentionDays must be a positive integer when OverflowAction = 'OverwriteOlder'."
+    exit 1
+}
+
+# ================================
+# APPLY SETTINGS
+# ================================
+
+Write-Host "Configuring event log '$LogName' to meet WN10-AU-000100 requirements..." 
+
+try {
+    if ($OverflowAction -eq 'OverwriteOlder') {
+        Limit-EventLog -LogName $LogName -MaximumSize $MaxSizeKB -OverflowAction $OverflowAction -RetentionDays $RetentionDays
+    } else {
+        Limit-EventLog -LogName $LogName -MaximumSize $MaxSizeKB -OverflowAction $OverflowAction
+    }
+}
+catch {
+    Write-Error "Failed to apply Limit-EventLog configuration: $($_.Exception.Message)"
+    exit 1
+}
+
+# ================================
+# VERIFY & REPORT
+# ================================
+
+try {
+    $logInfo = Get-EventLog -List | Where-Object { $_.LogDisplayName -eq $LogName -or $_.Log -eq $LogName }
+    if (-not $logInfo) {
+        Write-Error "Could not retrieve log info for '$LogName'. Verify the log exists."
+        exit 1
+    }
+
+    Write-Host "Current settings for '$LogName':"
+    Write-Host "  MaximumKilobytes      : $($logInfo.MaximumKilobytes)"
+    Write-Host "  OverflowAction        : $($logInfo.OverflowAction)"
+    Write-Host "  MinimumRetentionDays  : $($logInfo.MinimumRetentionDays)"
+
+    # Simple compliance check (you can tighten this once you know exact STIG numbers)
+    $sizeOk   = ($logInfo.MaximumKilobytes -ge $MaxSizeKB)
+    $actionOk = ($logInfo.OverflowAction -eq $OverflowAction)
+
+    if ($OverflowAction -eq 'OverwriteOlder') {
+        $retentionOk = ($logInfo.MinimumRetentionDays -ge $RetentionDays)
+    } else {
+        $retentionOk = $true
+    }
+
+    if ($sizeOk -and $actionOk -and $retentionOk) {
+        Write-Host "STIG WN10-AU-000100: Event log '$LogName' appears COMPLIANT with the configured values." -ForegroundColor Green
+    } else {
+        Write-Host "STIG WN10-AU-000100: Event log '$LogName' may NOT be fully compliant – review the above values." -ForegroundColor Yellow
+    }
+}
+catch {
+    Write-Error "Error while verifying log settings: $($_.Exception.Message)"
+    exit 1
+}
