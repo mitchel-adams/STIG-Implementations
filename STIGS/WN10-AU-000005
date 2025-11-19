@@ -1,0 +1,108 @@
+<#
+.SYNOPSIS
+    Configures the Windows 10 auditing setting associated with STIG ID WN10-AU-000005
+    by setting the required audit policy subcategory (for example, "Logoff",
+    "Logon", "Account Lockout", etc.) to the STIG-mandated state (for example,
+    "Success and Failure" or "Failure only").
+
+.NOTES
+    Author          : Mitch Adams
+    LinkedIn        : https://www.linkedin.com/in/mitchelcadams
+    GitHub          : https://github.com/mitchel-adams
+    Date Created    : 2025-11-19
+    Last Modified   : 2025-11-19
+    Version         : 1.0
+    CVEs            : N/A
+    Plugin IDs      : N/A
+    STIG-ID         : WN10-AU-000005
+
+.TESTED ON
+    Date(s) Tested  : 
+    Tested By       : 
+    Systems Tested  : 
+    PowerShell Ver. : 
+
+.USAGE
+    Update $AuditSubcategory and $DesiredState based on the exact language
+    in WN10-AU-000005, then run from an elevated PowerShell prompt:
+
+        PS C:\> .\WN10-AU-000005_Set-AuditPolicy.ps1
+#>
+
+# ================================
+# CONFIGURE THESE TWO VALUES FIRST
+# ================================
+
+# TODO: Replace this with the exact subcategory name from 'auditpol /get /category:*'
+# Example: "Logoff", "Logon", "Logon/Logoff", "Account Lockout", etc.
+$AuditSubcategory = "<<< SET ME TO THE CORRECT SUBCATEGORY >>>"
+
+# TODO: Replace this with the required state from the STIG:
+# Allowed values include:
+#   "Success"
+#   "Failure"
+#   "Success and Failure"
+#   "No Auditing"
+$DesiredState = "<<< SET ME TO 'Success', 'Failure', or 'Success and Failure' >>>"
+
+# ================================
+# DO NOT EDIT BELOW THIS LINE
+# ================================
+
+# Validate that the script is running elevated
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
+    Write-Error "This script must be run in an elevated PowerShell session (Run as Administrator)."
+    exit 1
+}
+
+if ($AuditSubcategory -like "<<<*>>>") {
+    Write-Error "You must set a valid audit subcategory in `\$AuditSubcategory` before running this script."
+    exit 1
+}
+
+if ($DesiredState -like "<<<*>>>") {
+    Write-Error "You must set a valid desired state in `\$DesiredState` before running this script."
+    exit 1
+}
+
+Write-Host "Configuring audit policy for subcategory '$AuditSubcategory' to '$DesiredState'..." 
+
+# Build the auditpol command
+# Note: /success:disable|enable and /failure:disable|enable are controlled by the chosen $DesiredState
+$successParam = "/success:disable"
+$failureParam = "/failure:disable"
+
+switch ($DesiredState) {
+    "Success" {
+        $successParam = "/success:enable"
+        $failureParam = "/failure:disable"
+    }
+    "Failure" {
+        $successParam = "/success:disable"
+        $failureParam = "/failure:enable"
+    }
+    "Success and Failure" {
+        $successParam = "/success:enable"
+        $failureParam = "/failure:enable"
+    }
+    "No Auditing" {
+        $successParam = "/success:disable"
+        $failureParam = "/failure:disable"
+    }
+    default {
+        Write-Error "Invalid DesiredState '$DesiredState'. Use 'Success', 'Failure', 'Success and Failure', or 'No Auditing'."
+        exit 1
+    }
+}
+
+# Apply the audit policy
+$cmd = "auditpol.exe /set /subcategory:`"$AuditSubcategory`" $successParam $failureParam"
+
+Write-Host "Running: $cmd"
+$proc = Start-Process -FilePath "auditpol.exe" -ArgumentList "/set","/subcategory:$AuditSubcategory",$successParam,$failureParam -NoNewWindow -PassThru -Wait
+
+if ($proc.ExitCode -eq 0) {
+    Write-Host "Audit policy for '$AuditSubcategory' successfully set to '$DesiredState'."
+} else {
+    Write-Error "Failed to set audit policy. Exit code: $($proc.ExitCode)"
+}
