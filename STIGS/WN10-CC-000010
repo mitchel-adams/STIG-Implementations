@@ -1,0 +1,54 @@
+<#
+.SYNOPSIS
+    Enforces STIG WN10-CC-000010: "Prevent enabling lock screen slide show" = Enabled.
+
+.DESCRIPTION
+    Sets the Group Policy-backed registry value to prevent users from enabling
+    the lock screen slide show:
+      HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization
+        - NoLockScreenSlideshow (DWORD) = 1
+
+.NOTES
+    Author          : Mitch Adams
+    LinkedIn        : https://www.linkedin.com/in/mitchelcadams
+    GitHub          : https://github.com/mitchel-adams
+    Date Created    : 2025-11-19
+    Last Modified   : 2025-11-19
+    Version         : 1.0
+    STIG-ID         : WN10-CC-000010
+
+.TESTED ON
+    Date(s) Tested  :
+    Tested By       :
+    Systems Tested  :
+    PowerShell Ver. :
+
+.USAGE
+    Run in an elevated PowerShell session:
+      PS C:\> .\WN10-CC-000010_PreventLockScreenSlideshow.ps1
+#>
+
+# --- Config ---
+$RegPath  = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'
+$RegName  = 'NoLockScreenSlideshow'
+$RegValue = 1  # 1 = Enabled (prevent slideshow)
+
+# --- Ensure path exists ---
+if (-not (Test-Path -Path $RegPath)) {
+    New-Item -Path $RegPath -Force | Out-Null
+}
+
+# --- Set the policy value ---
+New-ItemProperty -Path $RegPath -Name $RegName -PropertyType DWord -Value $RegValue -Force | Out-Null
+
+# --- Verify & report ---
+$applied = (Get-ItemProperty -Path $RegPath -Name $RegName -ErrorAction Stop).$RegName
+if ($applied -eq $RegValue) {
+    Write-Host "STIG WN10-CC-000010: 'Prevent enabling lock screen slide show' set to Enabled (DWORD=1)." -ForegroundColor Green
+} else {
+    Write-Host "STIG WN10-CC-000010: failed to apply setting." -ForegroundColor Red
+    exit 1
+}
+
+# Optional: uncomment to force a policy refresh on next cycle
+# gpupdate /target:computer /force
