@@ -1,0 +1,55 @@
+<#
+.SYNOPSIS
+    Enforces STIG WN10-CC-000310: "Configure Windows Defender SmartScreen for Microsoft Edge" = Enabled.
+
+.DESCRIPTION
+    This script ensures that Windows Defender SmartScreen is enabled for Microsoft Edge,
+    preventing users from visiting malicious websites or downloading unsafe files.
+    It sets the corresponding registry keys under HKLM to enforce the policy system-wide.
+
+.NOTES
+    Author          : Mitch Adams
+    LinkedIn        : https://www.linkedin.com/in/mitchelcadams
+    GitHub          : https://github.com/mitchel-adams
+    Date Created    : 2025-11-19
+    Last Modified   : 2025-11-19
+    Version         : 1.0
+    STIG-ID         : WN10-CC-000310
+
+.TESTED ON
+    Date(s) Tested  :
+    Tested By       :
+    Systems Tested  :
+    PowerShell Ver. :
+
+.USAGE
+    Run this script as Administrator:
+      PS C:\> .\WN10-CC-000310_EnableSmartScreen.ps1
+#>
+
+# --- Config ---
+$RegPath  = 'HKLM:\SOFTWARE\Policies\Microsoft\MicrosoftEdge\PhishingFilter'
+$RegName1 = 'EnabledV9'
+$RegName2 = 'PreventOverride'
+$RegValue1 = 1  # 1 = Enabled (SmartScreen active)
+$RegValue2 = 1  # 1 = Prevent users from bypassing SmartScreen warnings
+
+# --- Ensure the registry path exists ---
+if (-not (Test-Path -Path $RegPath)) {
+    New-Item -Path $RegPath -Force | Out-Null
+}
+
+# --- Apply the settings ---
+New-ItemProperty -Path $RegPath -Name $RegName1 -PropertyType DWord -Value $RegValue1 -Force | Out-Null
+New-ItemProperty -Path $RegPath -Name $RegName2 -PropertyType DWord -Value $RegValue2 -Force | Out-Null
+
+# --- Verification and Output ---
+$SmartScreenStatus = (Get-ItemProperty -Path $RegPath -Name $RegName1 -ErrorAction SilentlyContinue).$RegName1
+$PreventOverride = (Get-ItemProperty -Path $RegPath -Name $RegName2 -ErrorAction SilentlyContinue).$RegName2
+
+if (($SmartScreenStatus -eq 1) -and ($PreventOverride -eq 1)) {
+    Write-Host "STIG WN10-CC-000310: Windows Defender SmartScreen for Microsoft Edge is ENABLED and override is PREVENTED." -ForegroundColor Green
+} else {
+    Write-Host "STIG WN10-CC-000310: Failed to apply SmartScreen enforcement." -ForegroundColor Red
+    exit 1
+}
