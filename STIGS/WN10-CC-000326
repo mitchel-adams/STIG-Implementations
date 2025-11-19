@@ -1,0 +1,111 @@
+<#
+.SYNOPSIS
+    Configures the Windows 10 security setting associated with STIG ID WN10-CC-000326
+    by enforcing the "Turn off Push To Install" policy via the corresponding registry
+    value (DisablePushToInstall = 1).
+
+.NOTES
+    Author          : Mitch Adams
+    LinkedIn        : https://www.linkedin.com/in/mitchelcadams
+    GitHub          : https://github.com/mitchel-adams
+    Date Created    : 2025-11-19
+    Last Modified   : 2025-11-19
+    Version         : 1.0
+    CVEs            : N/A
+    Plugin IDs      : N/A
+    STIG-ID         : WN10-CC-000326
+
+.TESTED ON
+    Date(s) Tested  : 
+    Tested By       : 
+    Systems Tested  : 
+    PowerShell Ver. : 
+
+.USAGE
+    Run from an elevated PowerShell prompt:
+
+        PS C:\> .\WN10-CC-000326_Set-PushToInstall.ps1
+
+    This script will:
+      - Create the required registry path if missing
+      - Set DisablePushToInstall (REG_DWORD) to 1 under:
+        HKLM\SOFTWARE\Policies\Microsoft\Windows\PushToInstall
+#>
+
+# ================================
+# CONFIGURATION (STIG-SPECIFIC)
+# ================================
+
+$RegistryHive  = 'HKLM:'
+$RegPath       = 'SOFTWARE\Policies\Microsoft\Windows\PushToInstall'
+$ValueName     = 'DisablePushToInstall'
+$RequiredValue = 1   # STIG-mandated value
+
+# ================================
+# DO NOT EDIT BELOW THIS LINE
+# ================================
+
+# Ensure script is run elevated
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltinRole]::Administrator
+)) {
+    Write-Error "This script must be run from an elevated PowerShell session (Run as Administrator)."
+    exit 1
+}
+
+$FullRegPath = Join-Path -Path $RegistryHive -ChildPath $RegPath
+
+Write-Host "STIG ID: WN10-CC-000326"
+Write-Host "Applying 'Turn off Push To Install' (DisablePushToInstall = 1)..."
+Write-Host "Registry Path : $FullRegPath"
+Write-Host "Value Name    : $ValueName"
+Write-Host "Required Value: $RequiredValue"
+Write-Host ""
+
+try {
+    # Ensure key exists
+    if (-not (Test-Path -Path $FullRegPath)) {
+        Write-Host "Registry path missing. Creating: $FullRegPath"
+        New-Item -Path $FullRegPath -Force | Out-Null
+    }
+    else {
+        Write-Host "Registry key already exists."
+    }
+
+    # Get current value if present
+    $currentValue = $null
+    try {
+        $currentValue = (Get-ItemProperty -Path $FullRegPath -Name $ValueName -ErrorAction Stop).$ValueName
+        Write-Host "Current value detected: $currentValue"
+    }
+    catch {
+        Write-Host "Value '$ValueName' not found. It will be created."
+    }
+
+    # Apply STIG required value
+    if ($null -eq $currentValue -or $currentValue -ne $RequiredValue) {
+        Write-Host "Setting '$ValueName' to $RequiredValue..."
+        New-ItemProperty -Path $FullRegPath -Name $ValueName -Value $RequiredValue -PropertyType DWord -Force | Out-Null
+    }
+    else {
+        Write-Host "No change needed. System already compliant."
+    }
+
+    # Verify
+    $verifiedValue = (Get-ItemProperty -Path $FullRegPath -Name $ValueName -ErrorAction Stop).$ValueName
+
+    if ($verifiedValue -eq $RequiredValue) {
+        Write-Host ""
+        Write-Host "SUCCESS: '$ValueName' is correctly set to $RequiredValue under:"
+        Write-Host "         $FullRegPath"
+        exit 0
+    }
+    else {
+        Write-Error "Verification failed. Expected $RequiredValue but found $verifiedValue."
+        exit 1
+    }
+}
+catch {
+    Write-Error "An error occurred while configuring WN10-CC-000326: $($_.Exception.Message)"
+    exit 1
+}
