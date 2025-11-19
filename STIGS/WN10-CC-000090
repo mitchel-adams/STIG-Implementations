@@ -1,0 +1,146 @@
+<#
+.SYNOPSIS
+    Configures the Windows 10 setting associated with STIG ID WN10-CC-000090
+    by enforcing the "Configure registry policy processing" policy so that
+    Group Policy objects are reprocessed even if they have not changed.
+
+.NOTES
+    Author          : Mitch Adams
+    LinkedIn        : https://www.linkedin.com/in/mitchelcadams
+    GitHub          : https://github.com/mitchel-adams
+    Date Created    : 2025-11-19
+    Last Modified   : 2025-11-19
+    Version         : 1.0
+    CVEs            : N/A
+    Plugin IDs      : N/A
+    STIG-ID         : WN10-CC-000090
+
+.TESTED ON
+    Date(s) Tested  :
+    Tested By       :
+    Systems Tested  :
+    PowerShell Ver. :
+
+.USAGE
+    Run from an elevated PowerShell prompt:
+
+        PS C:\> .\WN10-CC-000090_Set-RegistryPolicyProcessing.ps1
+
+    This script will:
+      - Create the required registry key if it does not exist
+      - Set the following values under:
+        HKLM\SOFTWARE\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}
+
+        NoBackgroundPolicy = 0 (REG_DWORD)
+        NoGPOListChanges   = 1 (REG_DWORD)
+
+    These settings correspond to:
+      - "Configure registry policy processing" = Enabled
+      - "Process even if the Group Policy objects have not changed" = Selected
+#>
+
+# ================================
+# CONFIGURATION (STIG-SPECIFIC)
+# ================================
+
+$RegistryHive   = 'HKLM:'
+$RegPath        = 'SOFTWARE\Policies\Microsoft\Windows\Group Policy\{35378EAC-683F-11D2-A89A-00C04FBBCFA2}'
+
+# STIG-required values
+$Settings = @(
+    @{
+        Name  = 'NoBackgroundPolicy'
+        Value = 0  # Do NOT skip background processing
+    },
+    @{
+        Name  = 'NoGPOListChanges'
+        Value = 1  # Reprocess even if GPO list has not changed
+    }
+)
+
+# ================================
+# DO NOT EDIT BELOW THIS LINE
+# ================================
+
+# Ensure script is run elevated
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltinRole]::Administrator
+)) {
+    Write-Error "This script must be run from an elevated PowerShell session (Run as Administrator)."
+    exit 1
+}
+
+$FullRegPath = Join-Path -Path $RegistryHive -ChildPath $RegPath
+
+Write-Host "STIG ID: WN10-CC-000090"
+Write-Host "Enforcing 'Configure registry policy processing' to reprocess GPOs even if they have not changed..."
+Write-Host "Registry Path: $FullRegPath"
+Write-Host ""
+
+try {
+    # Ensure registry key exists
+    if (-not (Test-Path -Path $FullRegPath)) {
+        Write-Host "Registry key does not exist. Creating: $FullRegPath"
+        New-Item -Path $FullRegPath -Force | Out-Null
+    }
+    else {
+        Write-Host "Registry key already exists."
+    }
+
+    $allGood = $true
+
+    foreach ($setting in $Settings) {
+        $name         = $setting.Name
+        $requiredVal  = [int]$setting.Value
+        $currentValue = $null
+
+        try {
+            $currentValue = (Get-ItemProperty -Path $FullRegPath -Name $name -ErrorAction Stop).$name
+            Write-Host "Current value for '$name' is: $currentValue"
+        }
+        catch {
+            Write-Host "Value '$name' does not currently exist and will be created."
+        }
+
+        if ($null -eq $currentValue -or [int]$currentValue -ne $requiredVal) {
+            Write-Host "Setting '$name' to $requiredVal..."
+            New-ItemProperty -Path $FullRegPath -Name $name -Value $requiredVal -PropertyType DWord -Force | Out-Null
+        }
+        else {
+            Write-Host "No change needed. '$name' is already set to $requiredVal."
+        }
+    }
+
+    # Verification pass
+    Write-Host ""
+    Write-Host "Verifying configured values..."
+
+    foreach ($setting in $Settings) {
+        $name        = $setting.Name
+        $requiredVal = [int]$setting.Value
+
+        $verifiedVal = (Get-ItemProperty -Path $FullRegPath -Name $name -ErrorAction Stop).$name
+
+        if ([int]$verifiedVal -eq $requiredVal) {
+            Write-Host "  [OK] $name = $verifiedVal"
+        }
+        else {
+            Write-Error "  [FAIL] $name expected $requiredVal but found $verifiedVal"
+            $allGood = $false
+        }
+    }
+
+    if ($allGood) {
+        Write-Host ""
+        Write-Host "SUCCESS: WN10-CC-000090 registry settings are correctly configured."
+        exit 0
+    }
+    else {
+        Write-Error "One or more values failed verification for WN10-CC-000090."
+        exit 1
+    }
+}
+catch {
+    Write-Error "An error occurred while configuring WN10-CC-000090: $($_.Exception.Message)"
+    exit 1
+}
