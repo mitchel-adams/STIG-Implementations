@@ -1,0 +1,115 @@
+<#
+.SYNOPSIS
+    Configures the Windows 10 setting associated with STIG ID WN10-CC-000295
+    by enforcing the policy "Attachments must be prevented from being downloaded
+    from RSS feeds" via the corresponding registry value
+    (DisableEnclosureDownload = 1).
+
+.NOTES
+    Author          : Mitch Adams
+    LinkedIn        : https://www.linkedin.com/in/mitchelcadams
+    GitHub          : https://github.com/mitchel-adams
+    Date Created    : 2025-11-19
+    Last Modified   : 2025-11-19
+    Version         : 1.0
+    CVEs            : N/A
+    Plugin IDs      : N/A
+    STIG-ID         : WN10-CC-000295
+
+.TESTED ON
+    Date(s) Tested  : 
+    Tested By       : 
+    Systems Tested  : 
+    PowerShell Ver. : 
+
+.USAGE
+    Run from an elevated PowerShell prompt:
+
+        PS C:\> .\WN10-CC-000295_Set-RSSAttachmentPolicy.ps1
+
+    This script will:
+      - Create the required registry key if it does not exist
+      - Set DisableEnclosureDownload (REG_DWORD) to 1 under:
+        HKLM\SOFTWARE\Policies\Microsoft\Internet Explorer\Feeds
+#>
+
+# ================================
+# CONFIGURATION (STIG-SPECIFIC)
+# ================================
+
+# Registry information for this STIG requirement
+$RegistryHive  = 'HKLM:'
+$RegPath       = 'SOFTWARE\Policies\Microsoft\Internet Explorer\Feeds'
+$ValueName     = 'DisableEnclosureDownload'
+# STIG-required value: 1 (Enabled)
+$RequiredValue = 1
+
+# ================================
+# DO NOT EDIT BELOW THIS LINE
+# ================================
+
+# Validate that the script is running elevated
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltinRole]::Administrator
+)) {
+    Write-Error "This script must be run in an elevated PowerShell session (Run as Administrator)."
+    exit 1
+}
+
+# Build full registry path
+$FullRegPath = Join-Path -Path $RegistryHive -ChildPath $RegPath
+
+Write-Host "STIG ID: WN10-CC-000295"
+Write-Host "Ensuring RSS attachments cannot be downloaded..."
+Write-Host "Target key  : $FullRegPath"
+Write-Host "Value name  : $ValueName"
+Write-Host "Required val: $RequiredValue (REG_DWORD)"
+Write-Host ""
+
+try {
+    # Ensure the registry key exists
+    if (-not (Test-Path -Path $FullRegPath)) {
+        Write-Host "Registry key does not exist. Creating: $FullRegPath"
+        New-Item -Path $FullRegPath -Force | Out-Null
+    }
+    else {
+        Write-Host "Registry key already exists."
+    }
+
+    # Read current value (if present)
+    $currentValue = $null
+    try {
+        $currentValue = (Get-ItemProperty -Path $FullRegPath -Name $ValueName -ErrorAction Stop).$ValueName
+        Write-Host "Current value for '$ValueName' is: $currentValue"
+    }
+    catch {
+        Write-Host "Value '$ValueName' does not currently exist and will be created."
+    }
+
+    # Set the required value if needed
+    if ($null -eq $currentValue -or $currentValue -ne $RequiredValue) {
+        Write-Host "Setting '$ValueName' to $RequiredValue..."
+        New-ItemProperty -Path $FullRegPath -Name $ValueName -Value $RequiredValue -PropertyType DWord -Force | Out-Null
+    }
+    else {
+        Write-Host "No change needed. '$ValueName' is already set to $RequiredValue."
+    }
+
+    # Verify
+    $verifiedValue = (Get-ItemProperty -Path $FullRegPath -Name $ValueName -ErrorAction Stop).$ValueName
+
+    if ($verifiedValue -eq $RequiredValue) {
+        Write-Host ""
+        Write-Host "SUCCESS: '$ValueName' is correctly configured to $RequiredValue under:"
+        Write-Host "         $FullRegPath"
+        exit 0
+    }
+    else {
+        Write-Error "Verification failed: expected $RequiredValue but found $verifiedValue."
+        exit 1
+    }
+}
+catch {
+    Write-Error "An error occurred while configuring WN10-CC-000295: $($_.Exception.Message)"
+    exit 1
+}
