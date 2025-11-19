@@ -1,0 +1,35 @@
+<#
+.SYNOPSIS
+    Configures BitLocker on the C: drive by removing any existing TPM protector,
+    adding a new TPM+PIN protector, and enabling protection.
+
+.NOTES
+    Author          : Mitch Adams
+    LinkedIn        : https://www.linkedin.com/in/mitchelcadams
+    GitHub          : https://github.com/mitchel-adams
+    Date Created    : 2025-11-19
+    Last Modified   : 2025-11-19
+    Version         : 1.0
+    STIG-ID         : WN10-CC-000175
+#>
+
+# Example BitLocker configuration
+$DriveLetter = "C:"
+$Pin = "512567"
+
+# Remove existing TPM protectors if present
+$ExistingTPM = Get-BitLockerVolume -MountPoint $DriveLetter | Select-Object -ExpandProperty KeyProtector | Where-Object { $_.KeyProtectorType -eq "Tpm" }
+if ($ExistingTPM) {
+    Remove-BitLockerKeyProtector -MountPoint $DriveLetter -KeyProtectorId $ExistingTPM.KeyProtectorId
+}
+
+# Add TPM and PIN protector
+Add-BitLockerKeyProtector -MountPoint $DriveLetter -TpmAndPinProtector -Pin $Pin | Out-Null
+
+# Enable BitLocker if not already
+$Status = Get-BitLockerVolume -MountPoint $DriveLetter
+if ($Status.ProtectionStatus -ne "On") {
+    Enable-BitLocker -MountPoint $DriveLetter -EncryptionMethod XtsAes256 -UsedSpaceOnly
+}
+
+Write-Host "BitLocker configured with TPM + PIN on drive $DriveLetter."
